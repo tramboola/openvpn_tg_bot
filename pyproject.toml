@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ovpn-bot"
+version = "1.0.0"
+description = "Telegram bot for OpenVPN management via Docker"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Unlicense" }
+authors = [
+  { name = "Grigory Androsov" }
+]
+dependencies = [
+  "python-telegram-bot>=22.0,<23.0",
+  "python-dotenv>=1.0.1,<2.0.0",
+]
+
+[project.scripts]
+ovpn-bot = "ovpn_bot.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

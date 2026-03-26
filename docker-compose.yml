@@ -1,0 +1,10 @@
+version: "3.9"
+services:
+  bot:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /usr/bin/docker:/usr/bin/docker:ro
+    restart: unless-stopped

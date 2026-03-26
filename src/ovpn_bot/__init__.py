@@ -1,0 +1,2 @@
+"""ovpn_bot package."""
+
