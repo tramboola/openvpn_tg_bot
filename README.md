@@ -1,4 +1,4 @@
-# ovpn-bot (Python)
+# openvpn_tg_bot (Python)
 
 Telegram bot for automated OpenVPN management through Docker.
 
