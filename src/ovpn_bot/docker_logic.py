@@ -10,6 +10,14 @@ OVPN_PREFIX = "ovpn_"
 OVPN_DATA_VOLUME = f"{OVPN_PREFIX}data"
 OVPN_UDP_CONTAINER = f"{OVPN_PREFIX}udp"
 OVPN_TCP_CONTAINER = f"{OVPN_PREFIX}tcp"
+DOCKER_LOG_OPTIONS = [
+    "--log-driver",
+    "json-file",
+    "--log-opt",
+    "max-size=3m",
+    "--log-opt",
+    "max-file=1",
+]
 
 ADDRESS_PATTERN = re.compile(r"(\w+)://([\w.]+):(\d+)")
 SUPPORTED_CLIENT_PROTOCOLS = {"tcp", "udp"}
@@ -203,6 +211,7 @@ class OvpnLogic:
                 "--restart=always",
                 "--name",
                 OVPN_UDP_CONTAINER,
+                *DOCKER_LOG_OPTIONS,
                 "-p",
                 f"{port}:1194/udp",
                 "--cap-add=NET_ADMIN",
@@ -220,6 +229,7 @@ class OvpnLogic:
                 "--restart=always",
                 "--name",
                 OVPN_TCP_CONTAINER,
+                *DOCKER_LOG_OPTIONS,
                 "-p",
                 f"{port}:1194/tcp",
                 "--cap-add=NET_ADMIN",

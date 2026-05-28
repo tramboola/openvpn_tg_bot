@@ -8,3 +8,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /usr/bin/docker:/usr/bin/docker:ro
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "3m"
+        max-file: "1"
