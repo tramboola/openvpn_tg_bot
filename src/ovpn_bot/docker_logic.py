@@ -353,6 +353,8 @@ class OvpnLogic:
                 continue
 
             base_name, protocol = parse_common_name_to_user(common_name)
+            if protocol not in SUPPORTED_CLIENT_PROTOCOLS:
+                continue
             users.append(
                 UserCertificateInfo(
                     common_name=common_name,

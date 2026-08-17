@@ -18,6 +18,7 @@ class RecordingLogic(OvpnLogic):
         if any(argument.endswith("/index.txt") for argument in command):
             return CommandResult(
                 output=(
+                    "V\t270817000000Z\t\t00\tunknown\t/CN=185.5.206.191\n"
                     "V\t270817000000Z\t\t01\tunknown\t/CN=iphone_udp\n"
                     "R\t270817000000Z\t260817000000Z\t02\tunknown\t/CN=old_tcp"
                 ),

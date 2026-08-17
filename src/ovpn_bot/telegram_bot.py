@@ -401,13 +401,8 @@ class TelegramOvpnBot:
                 reply_markup=main_menu_keyboard(),
             )
             return
-        lines = ["Активные конфиги:"]
-        for user in users:
-            lines.append(
-                f"• {user.base_name} — {user.protocol.upper()} — действует с {user.activated_at}"
-            )
         await message.reply_text(
-            "\n".join(lines),
+            "Выберите конфиг:",
             reply_markup=profile_actions_keyboard(users),
         )
 
