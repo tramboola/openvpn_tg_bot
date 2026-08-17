@@ -39,6 +39,7 @@ from ovpn_bot.telegram_ui import (
     setup_protocol_keyboard,
     shutdown_confirmation_keyboard,
 )
+from ovpn_bot.telegram_request import RetryingHTTPXRequest
 
 
 PublicIpDetector = Callable[[], Awaitable[str]]
@@ -64,6 +65,8 @@ class TelegramOvpnBot:
         self.application = (
             Application.builder()
             .token(settings.bot_token)
+            .request(RetryingHTTPXRequest())
+            .get_updates_request(RetryingHTTPXRequest())
             .post_init(self._post_init)
             .build()
         )
