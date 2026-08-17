@@ -41,9 +41,9 @@ def test_build_client_common_name_adds_protocol_suffix() -> None:
     assert build_client_common_name("phone", "udp") == "phone_udp"
 
 
-def test_build_client_common_name_keeps_existing_suffix() -> None:
-    assert build_client_common_name("work_tcp", "tcp") == "work_tcp"
-    assert build_client_common_name("work_udp", "udp") == "work_udp"
+def test_build_client_common_name_treats_protocol_text_as_part_of_base_name() -> None:
+    assert build_client_common_name("work_tcp", "tcp") == "work_tcp_tcp"
+    assert build_client_common_name("work_udp", "udp") == "work_udp_udp"
 
 
 def test_parse_common_name_to_user_returns_base_name_and_protocol() -> None:

@@ -21,6 +21,8 @@ DOCKER_LOG_OPTIONS = [
 
 ADDRESS_PATTERN = re.compile(r"(\w+)://([\w.]+):(\d+)")
 SUPPORTED_CLIENT_PROTOCOLS = {"tcp", "udp"}
+PROFILE_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,31}")
+PROFILE_SUFFIX_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,23}")
 
 
 @dataclass(slots=True)
@@ -94,15 +96,42 @@ def adapt_profile_for_protocol(profile_text: str, protocol: str) -> str:
     return "\n".join(output_lines).strip() + "\n"
 
 
-def build_client_common_name(profile_name: str, protocol: str) -> str:
+def normalize_profile_name(profile_name: str) -> str:
     normalized_profile_name = profile_name.strip()
+    if not PROFILE_NAME_PATTERN.fullmatch(normalized_profile_name):
+        raise ValueError(
+            "Profile name must contain 1-32 Latin letters, digits, '-' or '_'"
+        )
+    return normalized_profile_name
+
+
+def normalize_profile_suffix(suffix: str) -> str:
+    normalized_suffix = suffix.strip()
+    if not normalized_suffix:
+        return ""
+    if not PROFILE_SUFFIX_PATTERN.fullmatch(normalized_suffix):
+        raise ValueError(
+            "Profile suffix must contain at most 24 Latin letters, digits, '-' or '_'"
+        )
+    return normalized_suffix
+
+
+def build_profile_filename(profile_name: str, suffix: str, protocol: str) -> str:
+    normalized_profile_name = normalize_profile_name(profile_name)
+    normalized_suffix = normalize_profile_suffix(suffix)
     normalized_protocol = protocol.strip().lower()
-    if not normalized_profile_name:
-        raise ValueError("Profile name cannot be empty")
     if normalized_protocol not in SUPPORTED_CLIENT_PROTOCOLS:
         raise ValueError("Protocol must be tcp or udp")
-    if normalized_profile_name.endswith("_tcp") or normalized_profile_name.endswith("_udp"):
-        return normalized_profile_name
+
+    suffix_part = f"-{normalized_suffix}" if normalized_suffix else ""
+    return f"{normalized_profile_name}{suffix_part}-{normalized_protocol}.ovpn"
+
+
+def build_client_common_name(profile_name: str, protocol: str) -> str:
+    normalized_profile_name = normalize_profile_name(profile_name)
+    normalized_protocol = protocol.strip().lower()
+    if normalized_protocol not in SUPPORTED_CLIENT_PROTOCOLS:
+        raise ValueError("Protocol must be tcp or udp")
     return f"{normalized_profile_name}_{normalized_protocol}"
 
 
