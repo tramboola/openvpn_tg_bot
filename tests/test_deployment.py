@@ -17,7 +17,8 @@ def test_compose_config_mounts_state_and_bot_token_secret(tmp_path) -> None:
     (tmp_path / ".env").write_text(
         "ADMIN_TELEGRAM_ID=12345\n"
         "STATE_FILE=/app/data/state.json\n"
-        "OPENVPN_IMAGE=kylemanna/openvpn:2.4\n",
+        "OPENVPN_IMAGE=kylemanna/openvpn:2.4@"
+        "sha256:4de5e6690818c7c4025ae605369f681e813a7f9fe5d99feed988412c2d07987c\n",
         encoding="utf-8",
     )
     secret_directory = tmp_path / "secrets"
@@ -56,4 +57,3 @@ def test_installer_has_valid_bash_syntax() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-

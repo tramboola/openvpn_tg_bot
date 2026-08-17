@@ -36,8 +36,9 @@ def load_settings() -> Settings:
     raw_admin_ids = os.getenv("ADMIN_TELEGRAM_ID", "").strip()
     docker_bin = os.getenv("DOCKER_BIN", "").strip() or "docker"
     state_file = os.getenv("STATE_FILE", "").strip() or "data/state.json"
-    openvpn_image = (
-        os.getenv("OPENVPN_IMAGE", "").strip() or "kylemanna/openvpn:2.4"
+    openvpn_image = os.getenv("OPENVPN_IMAGE", "").strip() or (
+        "kylemanna/openvpn:2.4@"
+        "sha256:4de5e6690818c7c4025ae605369f681e813a7f9fe5d99feed988412c2d07987c"
     )
 
     if not bot_token:

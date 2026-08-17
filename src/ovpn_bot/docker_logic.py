@@ -12,7 +12,10 @@ OVPN_PREFIX = "ovpn_"
 OVPN_DATA_VOLUME = f"{OVPN_PREFIX}data"
 OVPN_UDP_CONTAINER = f"{OVPN_PREFIX}udp"
 OVPN_TCP_CONTAINER = f"{OVPN_PREFIX}tcp"
-DEFAULT_OPENVPN_IMAGE = "kylemanna/openvpn:2.4"
+DEFAULT_OPENVPN_IMAGE = (
+    "kylemanna/openvpn:2.4@"
+    "sha256:4de5e6690818c7c4025ae605369f681e813a7f9fe5d99feed988412c2d07987c"
+)
 DOCKER_LOG_OPTIONS = [
     "--log-driver",
     "json-file",

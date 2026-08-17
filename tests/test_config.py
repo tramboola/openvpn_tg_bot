@@ -31,5 +31,7 @@ def test_direct_bot_token_remains_supported(monkeypatch) -> None:
 
     assert settings.bot_token == "123456:local-token"
     assert settings.state_file.endswith("data/state.json")
-    assert settings.openvpn_image == "kylemanna/openvpn:2.4"
-
+    assert settings.openvpn_image == (
+        "kylemanna/openvpn:2.4@"
+        "sha256:4de5e6690818c7c4025ae605369f681e813a7f9fe5d99feed988412c2d07987c"
+    )

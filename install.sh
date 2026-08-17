@@ -73,7 +73,7 @@ chmod 0600 secrets/bot_token
 cat > .env <<EOF
 ADMIN_TELEGRAM_ID=${ADMIN_TELEGRAM_ID_VALUE}
 STATE_FILE=/app/data/state.json
-OPENVPN_IMAGE=kylemanna/openvpn:2.4
+OPENVPN_IMAGE=kylemanna/openvpn:2.4@sha256:4de5e6690818c7c4025ae605369f681e813a7f9fe5d99feed988412c2d07987c
 DOCKER_BIN=/usr/bin/docker
 EOF
 chmod 0600 .env
