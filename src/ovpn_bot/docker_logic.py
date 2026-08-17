@@ -6,10 +6,13 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from ovpn_bot.state import PROTOCOL_PORTS
+
 OVPN_PREFIX = "ovpn_"
 OVPN_DATA_VOLUME = f"{OVPN_PREFIX}data"
 OVPN_UDP_CONTAINER = f"{OVPN_PREFIX}udp"
 OVPN_TCP_CONTAINER = f"{OVPN_PREFIX}tcp"
+DEFAULT_OPENVPN_IMAGE = "kylemanna/openvpn:2.4"
 DOCKER_LOG_OPTIONS = [
     "--log-driver",
     "json-file",
@@ -23,6 +26,7 @@ ADDRESS_PATTERN = re.compile(r"(\w+)://([\w.]+):(\d+)")
 SUPPORTED_CLIENT_PROTOCOLS = {"tcp", "udp"}
 PROFILE_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,31}")
 PROFILE_SUFFIX_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,23}")
+COMMON_NAME_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,64}")
 
 
 @dataclass(slots=True)
@@ -144,8 +148,14 @@ def parse_common_name_to_user(common_name: str) -> tuple[str, str]:
 
 
 class OvpnLogic:
-    def __init__(self, docker_bin: str = "docker") -> None:
+    def __init__(
+        self,
+        docker_bin: str = "docker",
+        openvpn_image: str = DEFAULT_OPENVPN_IMAGE,
+    ) -> None:
         self.docker_bin = self._resolve_docker_bin(docker_bin)
+        self.openvpn_image = openvpn_image.strip() or DEFAULT_OPENVPN_IMAGE
+        self._mutation_lock = asyncio.Lock()
 
     def _resolve_docker_bin(self, docker_bin: str) -> str:
         configured_value = docker_bin.strip()
@@ -205,17 +215,32 @@ class OvpnLogic:
             raise RuntimeError("\n".join(message_lines))
         return "\n".join(message_lines)
 
-    async def command_init(self, address: str) -> list[str]:
-        parsed_address = parse_address(address)
-        if parsed_address is None:
-            raise ValueError(f'"{address}" is not valid addr')
+    async def command_init(self, protocol: str, host: str) -> list[str]:
+        normalized_protocol = protocol.strip().lower()
+        if normalized_protocol not in PROTOCOL_PORTS:
+            raise ValueError("Protocol must be tcp or udp")
+        normalized_host = host.strip()
+        if not normalized_host:
+            raise ValueError("Public host cannot be empty")
 
-        _protocol, host, port = parsed_address
+        port = PROTOCOL_PORTS[normalized_protocol]
+        address = f"{normalized_protocol}://{normalized_host}:{port}"
+        container_name = f"{OVPN_PREFIX}{normalized_protocol}"
         data_mount = f"{OVPN_DATA_VOLUME}:/etc/openvpn"
-
         steps = [
             self._with_docker(["volume", "create", "--name", OVPN_DATA_VOLUME]),
-            self._with_docker(["run", "-v", data_mount, "--rm", "kylemanna/openvpn", "ovpn_genconfig", "-u", address]),
+            self._with_docker(
+                [
+                    "run",
+                    "-v",
+                    data_mount,
+                    "--rm",
+                    self.openvpn_image,
+                    "ovpn_genconfig",
+                    "-u",
+                    address,
+                ]
+            ),
             self._with_docker(
                 [
                     "run",
@@ -225,8 +250,8 @@ class OvpnLogic:
                     "-e",
                     "EASYRSA_BATCH=1",
                     "-e",
-                    f"EASYRSA_REQ_CN={host}",
-                    "kylemanna/openvpn",
+                    f"EASYRSA_REQ_CN={normalized_host}",
+                    self.openvpn_image,
                     "ovpn_initpki",
                     "nopass",
                 ]
@@ -239,59 +264,40 @@ class OvpnLogic:
                 "-d",
                 "--restart=always",
                 "--name",
-                OVPN_UDP_CONTAINER,
+                container_name,
                 *DOCKER_LOG_OPTIONS,
                 "-p",
-                f"{port}:1194/udp",
+                f"{port}:1194/{normalized_protocol}",
                 "--cap-add=NET_ADMIN",
-                "kylemanna/openvpn",
+                self.openvpn_image,
                 "ovpn_run",
                 "--proto",
-                "udp",
-            ],
-            [
-                self.docker_bin,
-                "run",
-                "-v",
-                data_mount,
-                "-d",
-                "--restart=always",
-                "--name",
-                OVPN_TCP_CONTAINER,
-                *DOCKER_LOG_OPTIONS,
-                "-p",
-                f"{port}:1194/tcp",
-                "--cap-add=NET_ADMIN",
-                "kylemanna/openvpn",
-                "ovpn_run",
-                "--proto",
-                "tcp",
+                normalized_protocol,
             ],
         ]
 
-        messages: list[str] = []
-        for command in steps:
-            messages.append(await self._execute_step(command))
-        messages.append("All done, init completed!")
+        async with self._mutation_lock:
+            messages = [await self._execute_step(command) for command in steps]
+        messages.append(
+            f"OpenVPN initialized: {normalized_protocol.upper()} on port {port}."
+        )
         return messages
 
     async def command_remove(self) -> list[str]:
         messages: list[str] = []
-        commands = [
-            self._with_docker(["rm", "-f", OVPN_UDP_CONTAINER]),
-            self._with_docker(["rm", "-f", OVPN_TCP_CONTAINER]),
-            self._with_docker(["volume", "rm", OVPN_DATA_VOLUME]),
-        ]
-        for command in commands:
-            command_text = " ".join(command)
-            result = await self._run_command(command)
-            message = f"Executing command: `{command_text}`"
-            if result.output:
-                message = f"{message}\n{result.output}"
-            if result.return_code != 0:
-                message = f"remove error: {message}"
-            messages.append(message)
-        messages.append("All removed!")
+        async with self._mutation_lock:
+            for container_name in (OVPN_UDP_CONTAINER, OVPN_TCP_CONTAINER):
+                command = self._with_docker(["rm", "-f", container_name])
+                result = await self._run_command(command)
+                if result.return_code != 0 and "No such container" not in result.output:
+                    raise RuntimeError(result.output or f"Failed to remove {container_name}")
+                messages.append(f"Container {container_name} removed or was absent.")
+
+            volume_command = self._with_docker(["volume", "rm", OVPN_DATA_VOLUME])
+            volume_result = await self._run_command(volume_command)
+            if volume_result.return_code != 0:
+                raise RuntimeError(volume_result.output or "Failed to remove OpenVPN data")
+            messages.append("OpenVPN certificates and configuration were removed.")
         return messages
 
     async def command_status(self) -> str:
@@ -310,10 +316,18 @@ class OvpnLogic:
         response_lines.extend(ovpn_lines)
         return "\n".join(response_lines).strip()
 
-    async def command_users(self) -> str:
+    async def list_users(self) -> list[UserCertificateInfo]:
         data_mount = f"{OVPN_DATA_VOLUME}:/etc/openvpn"
         index_command = self._with_docker(
-            ["run", "-v", data_mount, "--rm", "kylemanna/openvpn", "cat", "/etc/openvpn/pki/index.txt"]
+            [
+                "run",
+                "-v",
+                data_mount,
+                "--rm",
+                self.openvpn_image,
+                "cat",
+                "/etc/openvpn/pki/index.txt",
+            ]
         )
         index_result = await self._run_command(index_command)
         if index_result.return_code != 0:
@@ -346,10 +360,14 @@ class OvpnLogic:
             )
 
         users.sort(key=lambda item: item.base_name.lower())
+        return users
+
+    async def command_users(self) -> str:
+        users = await self.list_users()
         response_lines = [f"Total users: {len(users)}"]
         for user in users:
             response_lines.append(
-                f"- {user.base_name} ({user.protocol}) | CN: {user.common_name} | expires: {user.activated_at}"
+                f"- {user.base_name} ({user.protocol}) | CN: {user.common_name} | active since: {user.activated_at}"
             )
         if not users:
             response_lines.append("No users found.")
@@ -359,7 +377,19 @@ class OvpnLogic:
         data_mount = f"{OVPN_DATA_VOLUME}:/etc/openvpn"
         cert_path = f"/etc/openvpn/pki/issued/{common_name}.crt"
         cert_command = self._with_docker(
-            ["run", "-v", data_mount, "--rm", "kylemanna/openvpn", "openssl", "x509", "-in", cert_path, "-noout", "-startdate"]
+            [
+                "run",
+                "-v",
+                data_mount,
+                "--rm",
+                self.openvpn_image,
+                "openssl",
+                "x509",
+                "-in",
+                cert_path,
+                "-noout",
+                "-startdate",
+            ]
         )
         cert_result = await self._run_command(cert_command)
         if cert_result.return_code != 0:
@@ -375,6 +405,12 @@ class OvpnLogic:
         if normalized_protocol not in SUPPORTED_CLIENT_PROTOCOLS:
             raise ValueError("Protocol must be tcp or udp")
         client_common_name = build_client_common_name(profile_name, normalized_protocol)
+        return await self.command_revoke_common_name(client_common_name)
+
+    async def command_revoke_common_name(self, common_name: str) -> str:
+        normalized_common_name = common_name.strip()
+        if not COMMON_NAME_PATTERN.fullmatch(normalized_common_name):
+            raise ValueError("Invalid certificate common name")
 
         data_mount = f"{OVPN_DATA_VOLUME}:/etc/openvpn"
         revoke_command = self._with_docker(
@@ -385,17 +421,18 @@ class OvpnLogic:
                 "--rm",
                 "-e",
                 "EASYRSA_BATCH=1",
-                "kylemanna/openvpn",
+                self.openvpn_image,
                 "ovpn_revokeclient",
-                client_common_name,
+                normalized_common_name,
                 "remove",
             ]
         )
-        revoke_result = await self._run_command(revoke_command)
+        async with self._mutation_lock:
+            revoke_result = await self._run_command(revoke_command)
         if revoke_result.return_code != 0:
             raise RuntimeError(revoke_result.output or "Failed to revoke user certificate")
 
-        response_lines = [f"User `{client_common_name}` removed."]
+        response_lines = [f"Certificate `{normalized_common_name}` revoked."]
         if revoke_result.output:
             response_lines.append(revoke_result.output)
         return "\n".join(response_lines)
@@ -416,31 +453,53 @@ class OvpnLogic:
             data_mount,
             "--rm",
             "-i",
-            "kylemanna/openvpn",
+            self.openvpn_image,
             "easyrsa",
             "build-client-full",
             client_common_name,
             "nopass",
         ]
-        build_result = await self._run_command(build_command)
-        if build_result.return_code != 0:
-            raise RuntimeError(build_result.output or "Client profile generation failed")
+        async with self._mutation_lock:
+            build_result = await self._run_command(build_command)
+            if build_result.return_code != 0:
+                raise RuntimeError(
+                    build_result.output or "Client profile generation failed"
+                )
+            return await self._get_profile_unlocked(
+                common_name=client_common_name,
+                protocol=normalized_protocol,
+            )
 
+    async def command_get_profile(self, common_name: str, protocol: str) -> bytes:
+        normalized_common_name = common_name.strip()
+        if not COMMON_NAME_PATTERN.fullmatch(normalized_common_name):
+            raise ValueError("Invalid certificate common name")
+        normalized_protocol = protocol.strip().lower()
+        if normalized_protocol not in SUPPORTED_CLIENT_PROTOCOLS:
+            raise ValueError("Protocol must be tcp or udp")
+        async with self._mutation_lock:
+            return await self._get_profile_unlocked(
+                common_name=normalized_common_name,
+                protocol=normalized_protocol,
+            )
+
+    async def _get_profile_unlocked(self, common_name: str, protocol: str) -> bytes:
+        data_mount = f"{OVPN_DATA_VOLUME}:/etc/openvpn"
         get_client_command = [
             self.docker_bin,
             "run",
             "-v",
             data_mount,
             "--rm",
-            "kylemanna/openvpn",
+            self.openvpn_image,
             "ovpn_getclient",
-            client_common_name,
+            common_name,
         ]
         get_client_result = await self._run_command(get_client_command)
         if get_client_result.return_code != 0:
             raise RuntimeError(get_client_result.output or "Failed to fetch client profile")
         adapted_profile = adapt_profile_for_protocol(
             profile_text=get_client_result.output,
-            protocol=normalized_protocol,
+            protocol=protocol,
         )
         return adapted_profile.encode("utf-8")
