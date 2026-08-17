@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.12.11-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -14,5 +14,8 @@ COPY src ./src
 
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir .
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import os; os.kill(1, 0)"
 
 CMD ["ovpn-bot"]

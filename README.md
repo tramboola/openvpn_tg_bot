@@ -1,139 +1,141 @@
-# openvpn_tg_bot (Python)
+# openvpn_tg_bot
 
-Telegram bot for automated OpenVPN management through Docker.
+Telegram-бот для установки и управления личным OpenVPN-сервером на одном VPS.
 
-The project is fully written in Python.
+Бот запускает только один выбранный протокол:
 
-## Requirements
+- UDP — порт `1194/udp`;
+- TCP — порт `443/tcp`.
 
-- Python `3.11+`
-- Docker Engine (`docker` command must be available)
-- Telegram bot token from [@BotFather](https://t.me/BotFather)
+Публичный IPv4 VPS определяется автоматически. Пользователю не нужно вводить IP или выбирать порт.
 
-## Configuration
+## Быстрая установка на Ubuntu VPS
 
-Create a `.env` file:
+Требования: чистый или существующий Ubuntu VPS, Telegram-бот от [@BotFather](https://t.me/BotFather) и числовой ID вашего Telegram-аккаунта.
 
-```env
-ADMIN_TELEGRAM_ID=123456789
-BOT_TOKEN=1231231231:AAAAAAAAABBBBCCCCCCCCCCCCCC
-# Optional: path to docker if the docker command is not in PATH
-# DOCKER_BIN=C:\Program Files\Docker\Docker\resources\bin\docker.exe
+```bash
+git clone https://github.com/tramboola/openvpn_tg_bot.git
+cd openvpn_tg_bot
+sudo ./install.sh
 ```
 
-- `ADMIN_TELEGRAM_ID` - a single ID or a comma-separated list of IDs.
-- `BOT_TOKEN` - Telegram bot token.
-- `DOCKER_BIN` - optional full path to `docker` (useful for Linux services and Windows).
+Установщик спрашивает только:
 
-You can get your Telegram ID from [@userinfobot](https://t.me/userinfobot).
+1. токен бота от BotFather;
+2. ваш числовой Telegram ID.
 
-## Quick Start (Local)
+Если Docker отсутствует, установщик добавит официальный репозиторий Docker, установит Engine и Compose, включит автозапуск и поднимет бота. Токен хранится в отдельном файле `secrets/bot_token` с правами `600`, а не в `.env`.
+
+После установки откройте бота и нажмите `/start`:
+
+1. выберите кнопкой UDP или TCP;
+2. проверьте автоматически определённый IP и фиксированный порт;
+3. нажмите `Запустить VPN`.
+
+Если TCP-порт 443 уже занят веб-сервером, Docker вернёт ошибку. Бот не выбирает другой порт молча.
+
+## Управление из Telegram
+
+Главное меню:
+
+- `➕ Создать конфиг` — запросить имя устройства и получить `.ovpn`;
+- `📋 Конфиги` — показать активные сертификаты, скачать повторно или отозвать доступ;
+- `📊 Статус` — показать протокол, адрес и состояние контейнера;
+- `⚙️ Настройки` — изменить суффикс файлов или удалить VPN.
+
+Отзыв сертификата всегда требует подтверждения. Бот не может удалить уже скачанный файл с устройства, но после отзыва этот файл больше не подключится.
+
+Суффикс влияет только на имя отправляемого файла. Например, имя устройства `iphone`, суффикс `prague` и UDP дадут файл:
+
+```text
+iphone-prague-udp.ovpn
+```
+
+Внутреннее имя сертификата от изменения суффикса не зависит.
+
+## Резервные команды
+
+Кнопки являются основным интерфейсом, но оставлены команды:
+
+- `/start` — открыть меню или первоначальную настройку;
+- `/generate` — начать создание конфига;
+- `/users` — показать активные конфиги;
+- `/status` — показать состояние VPN;
+- `/settings` — открыть настройки;
+- `/shutdown` — запросить полное удаление с подтверждением;
+- `/help` — справка.
+
+## Ручной запуск через Compose
+
+```bash
+cp .env.example .env
+mkdir -p data secrets
+chmod 700 data secrets
+printf '%s\n' 'BOT_TOKEN_FROM_BOTFATHER' > secrets/bot_token
+chmod 600 .env secrets/bot_token
+docker compose up -d --build
+docker compose ps
+```
+
+Укажите свой `ADMIN_TELEGRAM_ID` в `.env` перед запуском.
+
+## Обновление и откат
+
+Перед обновлением сохраните текущий commit:
+
+```bash
+git rev-parse HEAD
+git pull --ff-only
+sudo docker compose up -d --build
+sudo docker compose ps
+```
+
+Если новая версия не запускается, вернитесь к сохранённому commit и пересоберите бота:
+
+```bash
+git switch --detach SAVED_COMMIT
+sudo docker compose up -d --build
+sudo docker compose ps
+```
+
+Обновление бота не удаляет Docker volume `ovpn_data` и существующие сертификаты. Полная кнопка удаления в настройках, наоборот, уничтожает этот volume без возможности восстановления.
+
+## Резервная копия PKI
+
+Volume `ovpn_data` содержит центр сертификации и все клиентские сертификаты. Потеря volume потребует перевыпустить все конфиги.
+
+Создать архив:
+
+```bash
+mkdir -p backups
+sudo docker run --rm \
+  -v ovpn_data:/source:ro \
+  -v "$PWD/backups:/backup" \
+  alpine:3.20 \
+  sh -c 'tar -czf /backup/ovpn-data.tar.gz -C /source .'
+```
+
+Храните архив вне VPS. Восстановление перезаписывает PKI и должно выполняться только при остановленном VPN после отдельной проверки архива.
+
+## Безопасность
+
+Доступ разрешён только ID из `ADMIN_TELEGRAM_ID`. Не пересылайте токен бота и `.ovpn`-файлы.
+
+Контейнер бота имеет доступ к `/var/run/docker.sock`, потому что создаёт OpenVPN-контейнеры и управляет PKI. Такой доступ практически эквивалентен административному доступу к VPS. Используйте отдельный приватный VPS, регулярно обновляйте систему и немедленно перевыпускайте токен через BotFather при подозрении на утечку.
+
+## Локальный запуск и тесты
+
+Python `3.11+`:
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install --upgrade pip
-pip install .
+source .venv/bin/activate
+pip install -e . pytest
+pytest -q
+```
+
+Для локального запуска без Compose secrets задайте `BOT_TOKEN`, `ADMIN_TELEGRAM_ID` и при необходимости `DOCKER_BIN`, затем выполните:
+
+```bash
 ovpn-bot
 ```
-
-## Running with Docker Compose
-
-```bash
-docker compose up -d --build
-docker compose ps
-```
-
-`docker-compose.yml` already mounts `/var/run/docker.sock` so the bot can launch OpenVPN containers.
-
-## Bot Commands
-
-- `/init` - initialize OpenVPN (example: `/init tcp://0.0.0.0:443`)
-- `/status` - list Docker containers and `ovpn_*` containers
-- `/users` - list all users with protocol and certificate activation date
-- `/generate_tcp` - generate a TCP profile (example: `/generate_tcp laptop`)
-- `/generate_udp` - generate a UDP profile (example: `/generate_udp laptop`)
-- `/generate` - compatibility alias, works like `/generate_tcp`
-- `/remove_user` - remove a user (example: `/remove_user laptop tcp`)
-- `/shutdown` - completely remove OpenVPN containers and volume
-- `/help` - show command help
-
-`/remove` is kept as a deprecated alias and redirects to `/shutdown`.
-
-After the bot starts, the commands are available in the Telegram menu (the `/` button) and can be used without typing them manually.
-
-### When to Use TCP vs UDP
-
-- `TCP` - more reliable in restricted or filtered networks, usually easier to get through.
-- `UDP` - usually faster and lower latency, a good choice on a normal network.
-
-## Tests
-
-```bash
-pip install pytest
-pytest
-```
-
-## Installation on a New VPS (Ubuntu)
-
-Below is the current sequence to make sure the bot starts automatically after a server reboot.
-
-### 1) Install Docker
-
-```bash
-sudo apt update
-sudo apt install -y ca-certificates curl git
-
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
-
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-$(. /etc/os-release && echo ${UBUNTU_CODENAME}) stable" | \
-sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-sudo apt update
-sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-```
-
-### 2) Enable Docker Autostart
-
-```bash
-sudo systemctl enable --now docker
-```
-
-### 3) Prepare the Project
-
-```bash
-cd /opt
-sudo git clone <YOUR_REPOSITORY_URL> openvpn_tg_bot
-cd /opt/openvpn_tg_bot
-cp .env.example .env
-```
-
-Fill in `.env`:
-
-```env
-ADMIN_TELEGRAM_ID=123456789
-BOT_TOKEN=1231231231:AAAAAAAAABBBBCCCCCCCCCCCCCC
-# If docker is not available in PATH:
-# DOCKER_BIN=/usr/bin/docker
-```
-
-### 4) Start
-
-```bash
-docker compose up -d --build
-docker compose ps
-```
-
-Why the bot will start after reboot:
-- `docker-compose.yml` contains `restart: unless-stopped`
-- Docker is enabled through `systemctl enable docker`
-
-### 5) Initial Telegram Setup
-
-1. `/init tcp://<PUBLIC_IP>:443`
-2. `/status`
-3. `/generate_tcp laptop` or `/generate_udp laptop`
-4. `/users`

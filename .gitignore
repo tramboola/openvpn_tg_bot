@@ -72,6 +72,11 @@ venv.bak/
 .env.*
 !.env.example
 
+# Runtime state and secrets
+data/
+secrets/*
+!secrets/.gitkeep
+
 # OS files
 .DS_Store
 Thumbs.db

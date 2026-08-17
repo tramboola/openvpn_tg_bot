@@ -3,12 +3,28 @@ services:
     build: .
     env_file:
       - .env
+    environment:
+      BOT_TOKEN_FILE: /run/secrets/bot_token
+    secrets:
+      - bot_token
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /usr/bin/docker:/usr/bin/docker:ro
+      - ./data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.50
+    pids_limit: 128
     restart: unless-stopped
     logging:
       driver: "json-file"
       options:
         max-size: "3m"
         max-file: "1"
+
+secrets:
+  bot_token:
+    file: ./secrets/bot_token
